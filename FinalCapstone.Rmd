@@ -1,0 +1,214 @@
+---
+title: "Project"
+output: word_document
+date: "2024-04-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(caTools)
+library(randomForest)
+library(ggplot2)
+library(dplyr)
+Adidas_US_Sales_Datasets <- read_csv("C:/Users/GOUTHAMI VENKATEH/Desktop/Adidas US Sales Datasets.csv")
+str(Adidas_US_Sales_Datasets)
+head(Adidas_US_Sales_Datasets)
+summary(Adidas_US_Sales_Datasets)
+table(Adidas_US_Sales_Datasets$column_name)
+
+```
+
+```{r}
+#Data Cleaning
+# Convert columns to numeric
+Adidas_US_Sales_Datasets$Price_per_Unit <- as.numeric(gsub("[^0-9.]", "", Adidas_US_Sales_Datasets$Price_per_Unit))
+Adidas_US_Sales_Datasets$Total_Sales <- as.numeric(gsub("[^0-9.]", "", Adidas_US_Sales_Datasets$Total_Sales))
+Adidas_US_Sales_Datasets$Operating_Profit <- as.numeric(gsub("[^0-9.]", "", Adidas_US_Sales_Datasets$Operating_Profit))
+Adidas_US_Sales_Datasets$Operating_Margin <- as.numeric(gsub("[^0-9.]", "", Adidas_US_Sales_Datasets$Operating_Margin))
+
+Adidas_US_Sales_Datasets[Adidas_US_Sales_Datasets == ""] <- NA
+Adidas_US_Sales_Datasets <- na.omit(Adidas_US_Sales_Datasets)
+write.csv(Adidas_US_Sales_Datasets, "Adidas_US_Sales_Datasets_modified.csv", row.names = FALSE)
+column_names <- colnames(Adidas_US_Sales_Datasets)
+new_column_names <- gsub("'s", "s", column_names)
+colnames(Adidas_US_Sales_Datasets) <- new_column_names
+
+
+
+```
+
+```{r}
+# Define the custom scaling function using log scaling
+custom_scaling_sales <- function(x) {
+  # Apply logarithmic transformation
+  log_values <- log(x)
+  
+  # Rescale the log-transformed values between 1 and 5
+  rescaled_values <- (log_values - min(log_values)) / (max(log_values) - min(log_values)) * 4 + 1
+  
+  return(rescaled_values)
+}
+
+# Extract the "Total Sales" column
+total_sales <- c(118633897, 145482070, 198336904, 171146890, 102336311, 123707203)
+
+# Apply the custom scaling function
+scaled_total_sales <- custom_scaling_sales(total_sales)
+
+# Display the scaled values
+scaled_total_sales
+```
+
+```{r}
+
+top_products <- data.frame(Product = c("Men's Apparel", "Men's Athletic Footwear", "Men's Street Footwear", "Women's Apparel", "Women's Athletic Footwear", "Women's Street Footwear"),
+                           Total_Sales = scaled_total_sales)
+
+ggplot(top_products, aes(x = reorder(Product, Total_Sales), y = Total_Sales)) +
+  geom_bar(stat = "identity", fill = "#0073e6", width = 0.7) +  
+  labs(title = "Total Sales per Product",
+       x = "Product",
+       y = "Scaled Total Sales (1-5)",
+       caption = "Data source: Adidas US Sales") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  
+        axis.text.y = element_text(size = 10),  
+        plot.title = element_text(hjust = 0.5, size = 14),  
+        plot.caption = element_text(hjust = 0, size = 8, color = "gray"),  
+        legend.position = "none") +  
+  geom_text(aes(label = round(Total_Sales, 2)), vjust = -0.3, size = 4, color = "black", fontface = "bold") +  
+  coord_flip()  
+
+
+```
+
+
+```{r}
+
+# Calculating total sales per retailer
+top_retailers <- aggregate(Total_Sales ~ Retailer, data = Adidas_US_Sales_Datasets, FUN = sum)
+percentage <- round(100 * top_retailers$Total_Sales / sum(top_retailers$Total_Sales), 1)
+labels <- paste(top_retailers$Retailer, "(", percentage, "%)", sep = "")
+pie(top_retailers$Total_Sales, 
+    labels = labels, 
+    main = "Total sales per Retailer", 
+    col = rainbow(length(top_retailers$Retailer)), 
+    border = "white"
+)
+
+
+```
+
+```{r}
+#Top selling methods
+library(ggplot2)
+colors <- c("#FF6F61", "#6B5B95", "#88B04B")
+
+top_salesmt <- aggregate(Total_Sales ~ Sales_Method, data = Adidas_US_Sales_Datasets, FUN = sum)
+
+top_salesmt$Sales_Method <- factor(top_salesmt$Sales_Method, levels = top_salesmt$Sales_Method[order(top_salesmt$Total_Sales)])
+
+ggplot(top_salesmt, aes(x = Total_Sales, y = Sales_Method, fill = Sales_Method)) +
+  geom_bar(stat = "identity") +  
+  geom_text(aes(label = Total_Sales, x = Total_Sales), size = 3.5, color = "black", fontface = "bold") +  
+  scale_fill_manual(values = colors) +  
+  labs(title = "Top Selling Methods (Total Sales)", x = "Total Sales", y = "Sales Method") +
+  theme_minimal(base_size = 12) +  
+  theme(axis.text.y = element_text(size = 10, color = "#333333"),  
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  
+        axis.title.x = element_text(size = 14, face = "bold"),  
+        axis.title.y = element_text(size = 14, face = "bold"),  
+        panel.grid.major.x = element_line(color = "#DDDDDD"),  
+        panel.grid.minor.y = element_blank(),  
+        panel.border = element_blank(),  
+        panel.background = element_rect(fill = "#F5F5F5"))
+
+```
+```{r}
+
+numeric_columns <- c("Price_per_Unit", "Units_Sold", "Total_Sales", "Operating_Profit")
+
+for (col in numeric_columns) {
+  Adidas_US_Sales_Datasets[[col]] <- as.numeric(gsub("[^0-9.]", "", Adidas_US_Sales_Datasets[[col]]))
+}
+
+correlation_matrix <- cor(Adidas_US_Sales_Datasets[, numeric_columns], use = "pairwise.complete.obs")
+
+correlation_df <- reshape2::melt(correlation_matrix)
+
+ggplot(data = correlation_df, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.text.y = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Pairwise Correlation Heatmap")
+```
+```{r}
+#Total Sales by State
+#install.packages("RColorBrewer")
+library(RColorBrewer)
+
+library(scales)
+sales_per_state <- aggregate(Total_Sales ~ State, data = Adidas_US_Sales_Datasets, sum)
+min_sales <- min(sales_per_state$Total_Sales)
+max_sales <- max(sales_per_state$Total_Sales)
+
+scaled_sales <- rescale(sales_per_state$Total_Sales)
+rescaled_sales <- scaled_sales * 4 + 1
+sales_per_state_rescaled <- data.frame(State = sales_per_state$State, Total_Sales = rescaled_sales)
+sales_per_state_rescaled <- sales_per_state_rescaled[order(-sales_per_state_rescaled$Total_Sales), ]
+top_5_states <- head(sales_per_state_rescaled, 10)
+
+
+top_5_states <- head(sales_per_state_rescaled, 10)
+
+
+ggplot(data = top_10_states, aes(x = reorder(State, -Total_Sales), y = Total_Sales, fill = Total_Sales)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") + 
+  labs(title = "Top 10 States by Total Sales",
+       x = "State",
+       y = "Total Sales",
+       fill = "") +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10), 
+        axis.text.y = element_text(size = 10),  
+        plot.title = element_text(size = 16, hjust = 0.5, face = "bold"),  
+        axis.line = element_line(color = "black"), 
+        axis.ticks = element_blank(),  
+        axis.title = element_text(size = 12, face = "bold"),  
+        )  
+
+```
+```{r}
+library(caTools) 
+#install.packages("caTools")
+set.seed(123) # Set seed for reproducibility
+split <- sample.split(Adidas_US_Sales_Datasets$Total_Sales, SplitRatio = 0.8)
+train_data <- subset(Adidas_US_Sales_Datasets, split == TRUE)
+test_data <- subset(Adidas_US_Sales_Datasets, split == FALSE)
+
+library(randomForest) 
+
+rf_model <- randomForest(Total_Sales ~ ., data = train_data)
+predictions <- predict(rf_model, test_data)
+MAE <- mean(abs(predictions - test_data$Total_Sales))
+MAE
+MSE <- mean((predictions - test_data$Total_Sales)^2)
+MSE
+R_squared <- cor(predictions, test_data$Total_Sales)^2
+R_squared
+```
+```{r}
+ggplot(data = test_data, aes(x = Total_Sales, y = predictions)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(x = "Actual Total Sales", y = "Predicted Total Sales", 
+       title = "Scatter Plot of Predicted vs. Actual Total Sales")
+```
+
